@@ -23,9 +23,19 @@ bool underlineOn = false;
 unsigned long ledBlinkTimer = 0;
 bool ledBlinkOn = false;
 
-const int sensorPin = 33;  // 4-wire bottom connector input pin used by M5 units
+unsigned long beepTimer = 0;
+
+// Neopixel strip
+int LED_PIN = 25;
+int LED_COUNT = 30;
+Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
+
+// IR Sensor
+int sensorPin = 26;
 int sensorVal = 0;
+int finalVal = 0;
 unsigned long sensorTimer = 0;
+const int ledSensorPin = 33;  // 4-wire bottom connector input pin used by M5 units
 int brightnessVal = 0;
 
 const int rgbledPin = 32; 
@@ -36,12 +46,12 @@ Adafruit_NeoPixel pixels = Adafruit_NeoPixel(
     NEO_GRB + NEO_KHZ800);  // LED type
 
 void setup() {
-  M5.begin();
+  M5.begin(true, true, true);
   Serial.begin(9600);
 
   M5.rtc.GetTime(&RTCTimeSave);
   AlarmTime = RTCTimeSave;
-  AlarmTime.Minutes = AlarmTime.Minutes + 2;  // set alarm 2 minutes ahead 
+  AlarmTime.Minutes = AlarmTime.Minutes + 0;  // set alarm 2 minutes ahead 
   M5.update();
   
   M5.M5Ink.clear();
@@ -50,10 +60,11 @@ void setup() {
   checkRTC();
   PageSprite.creatSprite(0, 0, 200, 200);
   drawTime();
-  
-  pixels.begin();           // initialize NeoPixel strip object 
-  pixels.show();            // turn OFF all pixels 
-  pixels.setBrightness(50); // set brightness to about 1/5 (max = 255)
+
+  strip.begin();           // initialize NeoPixel strip object 
+  strip.show();            // Turn OFF all pixels ASAP
+  strip.setBrightness(50); // Set BRIGHTNESS to about 1/5 (max = 255)
+  pinMode(sensorPin, INPUT_PULLUP);     // declare sensor as input
 }
 
 void loop() {
@@ -91,15 +102,18 @@ void loop() {
     // state behavior: read sensor and print its value to Serial port
     if(millis() > sensorTimer + 100) {
       sensorVal = analogRead(sensorPin);
-      brightnessVal = map(sensorVal, 0, 4095, 0, 255);
-      Serial.println(brightnessVal);
+      finalVal = map(sensorVal, 0, 4095, 0, 255);
+      Serial.println(finalVal);
+      if(finalVal > 100) {
+        theaterChase(strip.Color(127, 127, 127), 50); // White, half brightness        
+      }
       sensorTimer = millis();    
     }
     // (OPTIONAL) state behavior: change RGB LEDs green level according to sensor value:
-    for( int i=0; i<3; i++) {
-      pixels.setPixelColor(i, pixels.Color(0, brightnessVal, 0)); 
-      pixels.show(); 
+    for( int i=0; i<30; i++) {
+      strip.setPixelColor(i, strip.Color(0, brightnessVal, 0)); 
     }
+    strip.show(); 
     // state transition: MID button 
     if ( M5.BtnMID.wasPressed()) {
       AlarmTime = RTCtime;
@@ -107,7 +121,7 @@ void loop() {
       Serial.println("program_state => STATE_EDIT_MINUTES");
     }
     // state transition: alarm time equals real time clock 
-    else if(AlarmTime.Hours == RTCtime.Hours && AlarmTime.Minutes == RTCtime.Minutes) {
+    if(AlarmTime.Hours == RTCtime.Hours && AlarmTime.Minutes == RTCtime.Minutes) {
       program_state = STATE_ALARM;
       Serial.println("program_state => STATE_ALARM");
     }
@@ -190,38 +204,47 @@ void loop() {
     }
   }
   else if( program_state == STATE_ALARM) {
+    sensorVal = analogRead(sensorPin);
+    finalVal = map(sensorVal, 0, 4095, 0, 255);
+    Serial.println(finalVal);
     // state behavior: check and update time every second
     if(millis() > rtcTimer + 1000) {
+      M5.Speaker.setBeep(500,100);
+      M5.Speaker.beep();
       updateTime();
       drawTime();
-      //drawTimeToAlarm();    
-      PageSprite.drawString(45, 130, "  ALARM IS ON  ");
-      PageSprite.pushSprite();   
+      drawTimeToAlarm();      
       rtcTimer = millis();
     }
     // (OPTIONAL) state behavior: blink RGB LEDs red every 500ms
     if(millis() > ledBlinkTimer + 500) {
       if(ledBlinkOn) {
         // turn all pixels red:
-        for( int i=0; i<3; i++) {
-          pixels.setPixelColor(i, pixels.Color(255, 0, 0)); 
-          pixels.show(); 
+        for( int i=0; i<30; i++) {
+          if(i%2 == 0) 
+            strip.setPixelColor(i, strip.Color(255, 0, 0)); 
         }
+        strip.show(); 
         ledBlinkOn = false;        
       }
       else {
         // turn all pixels off:
-        for( int i=0; i<3; i++) {
-          pixels.setPixelColor(i, pixels.Color(0, 0, 0)); 
-          pixels.show(); 
+        for( int i=0; i<30; i++) {
+          strip.setPixelColor(i, strip.Color(0, 0, 0)); 
         }
+        strip.show(); 
         ledBlinkOn = true;
       }
       ledBlinkTimer = millis();
     }
     // state transition: top button press to finish alarm
-    if ( M5.BtnEXT.wasPressed()) {
-      Serial.println("BtnEXT wasPressed!");
+    sensorVal = analogRead(sensorPin);
+    finalVal = map(sensorVal, 0, 4095, 0, 255);
+    Serial.println(finalVal);
+    if ( finalVal > 100) {
+      theaterChase(strip.Color(127, 127, 127), 50); // White, half brightness    
+      strip.show();  
+      Serial.println("Basket was made!");
       M5.M5Ink.clear();
       PageSprite.clear(CLEAR_DRAWBUFF | CLEAR_LASTBUFF);
       program_state = STATE_ALARM_FINISHED;
@@ -229,11 +252,14 @@ void loop() {
     }
   }
   else if(program_state == STATE_ALARM_FINISHED) {
+    M5.Speaker.end();
+    theaterChase(strip.Color(127, 127, 127), 50); // White, half brightness    
+    strip.show();  
     // state behavior: check and update time every second
     if(millis() > rtcTimer + 1000) {
       updateTime();
       drawTime();
-      PageSprite.drawString(50, 130, "ALARM IS OFF");
+      PageSprite.drawString(50, 120, "ALARM IS OFF");
       PageSprite.pushSprite();    
       rtcTimer = millis();
     }
@@ -244,7 +270,20 @@ void loop() {
       Serial.println("program_state => STATE_EDIT_MINUTES");
     }
   }
-  
   M5.update();
 }
+
+void theaterChase(int color, int wait) {
+  for(int a=0; a<10; a++) {  // Repeat 10 times...
+    for(int b=0; b<3; b++) { //  'b' counts from 0 to 2...
+      strip.clear();         //   Set all pixels in RAM to 0 (off)
+      // 'c' counts up from 'b' to end of strip in steps of 3...
+      for(int c=b; c<strip.numPixels(); c += 3) {
+        strip.setPixelColor(c, color); // Set pixel 'c' to value 'color'
+      }
+      strip.show(); // Update strip with new contents
+      delay(wait);  // Pause for a moment
+    }
+  }
+}  
 
