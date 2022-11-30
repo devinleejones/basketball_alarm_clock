@@ -2,8 +2,8 @@
 Interactive Basketball Alarm Clock
 
 Components-
-M5Stack ESP32 Core Ink
-Adafruit NeoPixel LED Strip (30)
+M5Stack ESP32 Core Ink,
+Adafruit NeoPixel LED Strip (30),
 IR Sensor
 
 How it works-
